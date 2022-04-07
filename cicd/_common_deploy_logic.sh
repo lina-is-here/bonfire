@@ -6,20 +6,35 @@
 #COMPONENTS_W_RESOURCES="component1 component2"  # components which should preserve resource settings (optional, default: none)
 #DEPLOY_TIMEOUT="600"  # bonfire deployment timeout parameter in seconds
 #RELEASE_NAMESPACE="true"  # release namespace after PR check ends (default: true)
-
+#ALWAYS_COLLECT_LOGS="true"  # collect logs on teardown even if tests passed (default: false)
+#REF_ENV="insights-production"  # name of bonfire reference environment (default: insights-production)
 
 # Env vars set by 'bootstrap.sh':
 #IMAGE_TAG="abcd123"  # image tag for the PR being tested
 #GIT_COMMIT="abcd123defg456"  # full git commit hash of the PR being tested
 #ARTIFACTS_DIR -- directory where test run artifacts are stored
 
-trap "teardown" EXIT ERR SIGINT SIGTERM
+add_cicd_bin_to_path
+
+function trap_proxy {
+    # https://stackoverflow.com/questions/9256644/identifying-received-signal-name-in-bash
+    func="$1"; shift
+    for sig; do
+        trap "$func $sig" "$sig"
+    done
+}
+
+trap_proxy teardown EXIT ERR SIGINT SIGTERM
 
 set -e
 
 : ${COMPONENTS:=""}
 : ${COMPONENTS_W_RESOURCES:=""}
 : ${DEPLOY_TIMEOUT:="600"}
+: ${REF_ENV:="insights-production"}
+: ${RELEASE_NAMESPACE:="true"}
+: ${ALWAYS_COLLECT_LOGS:="false"}
+
 K8S_ARTIFACTS_DIR="$ARTIFACTS_DIR/k8s_artifacts"
 TEARDOWN_RAN=0
 
@@ -55,12 +70,18 @@ function collect_k8s_artifacts() {
 }
 
 function teardown {
+    local CAPTURED_SIGNAL="$1"
+
+    add_cicd_bin_to_path
+
     set +x
     [ "$TEARDOWN_RAN" -ne "0" ] && return
     echo "------------------------"
     echo "----- TEARING DOWN -----"
     echo "------------------------"
     local ns
+
+    echo "Tear down operation triggered by signal: $CAPTURED_SIGNAL"
 
     # run teardown on all namespaces possibly reserved in this run
     RESERVED_NAMESPACES=("${NAMESPACE}" "${DB_NAMESPACE}" "${SMOKE_NAMESPACE}")
@@ -70,8 +91,15 @@ function teardown {
     for ns in ${UNIQUE_NAMESPACES[@]}; do
         echo "Running teardown for ns: $ns"
         set +e
-        collect_k8s_artifacts $ns
-        if [ "${RELEASE_NAMESPACE:-true}" != "false" ]; then
+
+        if [ "$ALWAYS_COLLECT_LOGS" != "true" ] && [ "$CAPTURED_SIGNAL" == "EXIT" ] && check_junit_files "${ARTIFACTS_DIR}/junit-*.xml"; then
+            echo "No errors or failures detected on JUnit reports, skipping K8s artifacts collection"
+        else
+            [ "$ALWAYS_COLLECT_LOGS" != "true" ] && echo "Errors or failures detected, collecting K8s artifacts"
+            collect_k8s_artifacts $ns
+        fi
+
+        if [ "${RELEASE_NAMESPACE}" != "false" ]; then
             echo "Releasing namespace reservation"
             bonfire namespace release $ns -f
         fi

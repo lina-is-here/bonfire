@@ -378,7 +378,7 @@ _process_options = [
         "-p",
         help=(
             "Override parameter for a component using format "
-            "'<app>/<component>/<parameter name>=<value>"
+            "'<component>/<parameter name>=<value>'"
         ),
         multiple=True,
         callback=_validate_set_parameter,
@@ -519,6 +519,13 @@ _iqe_cji_process_options = [
         "--marker",
         "-m",
         help="pytest marker expression",
+        type=str,
+        default="",
+    ),
+    click.option(
+        "--plugins",
+        "-p",
+        help="comma,separated,list of IQE plugins (default: determined by ClowdApp)",
         type=str,
         default="",
     ),
@@ -1114,6 +1121,7 @@ def _cmd_process_iqe_cji(
     requirements,
     requirements_priority,
     test_importance,
+    plugins,
     local,
 ):
     """Process IQE ClowdJobInvocation template and print output"""
@@ -1129,6 +1137,7 @@ def _cmd_process_iqe_cji(
         requirements,
         requirements_priority,
         test_importance,
+        plugins,
         local,
     )
     print(json.dumps(cji_config, indent=2))
@@ -1154,6 +1163,7 @@ def _cmd_deploy_iqe_cji(
     requirements,
     requirements_priority,
     test_importance,
+    plugins,
     name,
     requester,
     duration,
@@ -1177,6 +1187,7 @@ def _cmd_deploy_iqe_cji(
         requirements,
         requirements_priority,
         test_importance,
+        plugins,
         local,
     )
 
